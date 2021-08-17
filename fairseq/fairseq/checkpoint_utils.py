@@ -144,6 +144,72 @@ def load_checkpoint(args, trainer, **passthrough_args):
 
     return extra_state, epoch_itr
 
+def load_dual_checkpoint_for_inference(args, arg_overrides=None, task=None):
+    model = task.build_model(args)
+    import pdb;pdb.set_trace()
+
+    f_checkpoint_path, b_checkpoint_path = args.path.split(':')
+
+    f_state = torch.load(f_checkpoint_path, map_location=lambda s, l: default_restore_location(s, 'cpu'))
+    model_f_dict = model.modelf.state_dict()
+    base_dict = {k:v for k,v in f_state['model'].items() if k in model_f_dict}
+    model_f_dict.update(base_dict)
+    model.modelf.load_state_dict(model_f_dict)
+    
+    b_state = torch.load(b_checkpoint_path, map_location=lambda s, l: default_restore_location(s, 'cpu'))
+    model_b_dict = model.modelb.state_dict()
+    base_dict = {k:v for k,v in b_state['model'].items() if k in model_b_dict}
+    model_b_dict.update(base_dict)
+    model.modelb.load_state_dict(model_b_dict)
+    print("load dual transformer finished.")
+    
+    return [model] 
+
+def load_dual_checkpoint(args, trainer, **passthrough_args):
+    """
+    Load a checkpoint and restore the training iterator.
+
+    *passthrough_args* will be passed through to
+    ``trainer.get_train_iterator``.
+    """
+    # only one worker should attempt to create the required dir
+    if args.distributed_rank == 0:
+        os.makedirs(args.save_dir, exist_ok=True)
+
+    # import pdb;pdb.set_trace()
+    f_checkpoint_path = os.path.join(args.save_dir, "checkpoint_last_f.pt")
+    b_checkpoint_path = os.path.join(args.save_dir, "checkpoint_last_b.pt")
+
+    f_state = torch.load(f_checkpoint_path, map_location=lambda s, l: default_restore_location(s, 'cpu'))
+    model_f_dict = trainer.model.modelf.state_dict()
+    base_dict = {k:v for k,v in f_state['model'].items() if k in model_f_dict}
+    model_f_dict.update(base_dict)
+    trainer.model.modelf.load_state_dict(model_f_dict)
+
+    for name, param in trainer.model.modelf.named_parameters():
+        if 'suphead' in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
+    
+    b_state = torch.load(b_checkpoint_path, map_location=lambda s, l: default_restore_location(s, 'cpu'))
+    model_b_dict = trainer.model.modelb.state_dict()
+    base_dict = {k:v for k,v in b_state['model'].items() if k in model_b_dict}
+    model_b_dict.update(base_dict)
+    trainer.model.modelb.load_state_dict(model_b_dict)
+    for name, param in trainer.model.modelf.named_parameters():
+        if 'suphead' in name:
+            param.requires_grad = True
+            # print(name)
+        else:
+            param.requires_grad = False
+
+    print("load dual transformer finished.")
+    # import pdb;pdb.set_trace()
+
+    epoch_itr = trainer.get_train_iterator(epoch=0, load_dataset=True, **passthrough_args)
+    extra_state = None
+    return extra_state, epoch_itr
 
 def load_checkpoint_to_cpu(path, arg_overrides=None):
     """Loads a checkpoint to CPU (with upgrading for backward compatibility)."""
