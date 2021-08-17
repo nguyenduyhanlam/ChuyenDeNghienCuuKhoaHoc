@@ -71,7 +71,7 @@ def main(args, init_distributed=False):
     # Load the latest checkpoint if one is available and restore the
     # corresponding train iterator
 
-    if not args.load_dual_model:
+    if args.load_dual_model is not None:
         extra_state, epoch_itr = checkpoint_utils.load_checkpoint(args, trainer)
     else:
         extra_state, epoch_itr = checkpoint_utils.load_dual_checkpoint(args, trainer)
