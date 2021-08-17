@@ -253,6 +253,8 @@ def add_preprocess_args(parser):
                        help="Pad dictionary size to be multiple of N")
     group.add_argument("--workers", metavar="N", default=1, type=int,
                        help="number of parallel workers")
+    group.add_argument("--process-only-alignment", action="store_true",
+                       help="Only process the source language")
     # fmt: on
     return parser
 
@@ -273,6 +275,25 @@ def add_dataset_args(parser, train=False, gen=False):
     parser.add_argument('--dataset-impl', metavar='FORMAT',
                         choices=get_available_dataset_impl(),
                         help='output dataset implementation')
+    parser.add_argument('--set-add-align-head', action='store_true',
+                            help='if True, add an head in each decoder layer for alignment')
+    parser.add_argument('--set-shift', action='store_true',
+                            help='if True, train and test shifted attention.')
+    parser.add_argument('--alignment-task', default='vanilla', type=str, choices=['vanilla', 'usehead', 'addhead', 'supalign', 'ptrnet','dual'],
+                            help='train and test shifted attention.') 
+    parser.add_argument('--set-src-bow-loss', action='store_true',
+                            help='start to train with src bag-of-words loss')
+    group.add_argument('--beam', default=5, type=int, metavar='N',
+                       help='beam size')
+    # if 'alignment_layer' in parser:
+    parser.add_argument('--alignment-layer', default=2, type=int,
+                            help='train and test shifted attention.')
+    parser.add_argument('--alignment-heads', type=int, metavar='D',
+                            help='Number of cross attention heads per layer to supervised with alignments')
+    parser.add_argument('--cons-type', type=str, metavar='D',
+                            help='Number of cross attention heads per layer to supervised with alignments')
+    parser.add_argument('--set-dual-trans', action='store_true',
+                            help='train attention agreement model')
     if train:
         group.add_argument('--train-subset', default='train', metavar='SPLIT',
                            choices=['train', 'valid', 'test'],
@@ -294,6 +315,9 @@ def add_dataset_args(parser, train=False, gen=False):
                                 ' (defaults to --max-sentences)')
         group.add_argument('--curriculum', default=0, type=int, metavar='N',
                            help='don\'t shuffle batches for first N epochs')
+        group.add_argument('--model-overrides', default="{}", type=str, metavar='DICT',
+                       help='a dictionary used to override model args at generation '
+                            'that were used during model training')
     if gen:
         group.add_argument('--gen-subset', default='test', metavar='SPLIT',
                            help='data subset to generate (train, valid, test)')
@@ -301,6 +325,10 @@ def add_dataset_args(parser, train=False, gen=False):
                            help='shard generation over N shards')
         group.add_argument('--shard-id', default=0, type=int, metavar='ID',
                            help='id of the shard to generate (id < num_shards)')
+        group.add_argument('--print-vanilla-alignment', action="store_true",
+                           help='use shifted attention to extract alignment')
+        
+        
     # fmt: on
     return group
 
@@ -408,6 +436,8 @@ def add_checkpoint_args(parser):
                        help='metric to use for saving "best" checkpoints')
     group.add_argument('--maximize-best-checkpoint-metric', action='store_true',
                        help='select the largest metric value for saving "best" checkpoints')
+    group.add_argument('--load-dual-model', action='store_true',
+                       help='load dual forward and backward transformer model')
     # fmt: on
     return group
 
@@ -423,7 +453,7 @@ def add_common_eval_args(group):
     group.add_argument('--model-overrides', default="{}", type=str, metavar='DICT',
                        help='a dictionary used to override model args at generation '
                             'that were used during model training')
-    group.add_argument('--results-path', metavar='RESDIR', type=str, default=None,
+    group.add_argument('--decoding-path', metavar='RESDIR', type=str, default=None,
                        help='path to save eval results (optional)"')
     # fmt: on
 
@@ -449,8 +479,7 @@ def add_generation_args(parser):
     group = parser.add_argument_group('Generation')
     add_common_eval_args(group)
     # fmt: off
-    group.add_argument('--beam', default=5, type=int, metavar='N',
-                       help='beam size')
+    
     group.add_argument('--nbest', default=1, type=int, metavar='N',
                        help='number of hypotheses to output')
     group.add_argument('--max-len-a', default=0, type=float, metavar='N',
