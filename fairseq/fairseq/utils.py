@@ -12,12 +12,14 @@ import os
 import sys
 from typing import Callable, List
 import warnings
+import itertools
 
 import torch
 import torch.nn.functional as F
 
 from itertools import accumulate
 from fairseq.modules import gelu, gelu_accurate
+from fairseq.data import data_utils
 
 
 def load_ensemble_for_inference(filenames, task, model_arg_overrides=None):
@@ -175,11 +177,11 @@ def make_positions(tensor, padding_idx, onnx_trace=False):
     # balanced to both work with ONNX export and XLA. In particular XLA
     # prefers ints, cumsum defaults to output longs, and ONNX doesn't know
     # how to handle the dtype kwarg in cumsum.
+    # import pdb;pdb.set_trace()
     mask = tensor.ne(padding_idx).int()
     return (
         torch.cumsum(mask, dim=1).type_as(mask) * mask
     ).long() + padding_idx
-
 
 def strip_pad(tensor, pad):
     return tensor[tensor.ne(pad)]
@@ -361,6 +363,14 @@ def has_parameters(module):
     except StopIteration:
         return False
 
+def new_arange(x, *size):
+    """
+    Return a Tensor of `size` filled with a range function on the device of x.
+    If size is empty, using the size of the variable x.
+    """
+    if len(size) == 0:
+        size = x.size()
+    return torch.arange(size[-1], device=x.device).expand(*size).contiguous()
 
 def set_torch_seed(seed):
     # Set seed based on args.seed and the update number so that we get
@@ -368,7 +378,6 @@ def set_torch_seed(seed):
     assert isinstance(seed, int)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-
 
 def parse_alignment(line):
     """
@@ -398,14 +407,14 @@ def get_token_to_word_mapping(tokens, exclude_list):
     token_to_word = {i: word_idx[i] for i in range(n)}
     return token_to_word
 
-
 def extract_hard_alignment(attn, src_sent, tgt_sent, pad, eos):
     tgt_valid = ((tgt_sent != pad) & (tgt_sent != eos)).nonzero().squeeze(dim=-1)
     src_invalid = ((src_sent == pad) | (src_sent == eos)).nonzero().squeeze(dim=-1)
     src_token_to_word = get_token_to_word_mapping(src_sent, [eos, pad])
     tgt_token_to_word = get_token_to_word_mapping(tgt_sent, [eos, pad])
-    alignment = []
+    
     if len(tgt_valid) != 0 and len(src_invalid) < len(src_sent):
+        alignment = []
         attn_valid = attn[tgt_valid]
         attn_valid[:, src_invalid] = float('-inf')
         _, src_indices = attn_valid.max(dim=1)
@@ -413,12 +422,95 @@ def extract_hard_alignment(attn, src_sent, tgt_sent, pad, eos):
             alignment.append((src_token_to_word[src_idx.item()] - 1, tgt_token_to_word[tgt_idx.item()] - 1))
     return alignment
 
+def extract_soft_alignment(sample, model, src_punc_tokens, tgt_punc_tokens=None, alignment_task=None):
+    src_sent = sample['net_input']['src_tokens']
+    src_lengths = sample['net_input']['src_lengths']
+    prev_output_tokens =  sample['net_input']['prev_output_tokens']
+    tgt_sent = sample['target']
+    sampleID = sample['id'].tolist()
+    bsz, _ = src_sent.size()
+    pad = model.decoder.src_dict.pad_index
+    eos = model.decoder.src_dict.eos_index
 
-def new_arange(x, *size):
-    """
-    Return a Tensor of `size` filled with a range function on the device of x.
-    If size is empty, using the size of the variable x.
-    """
-    if len(size) == 0:
-        size = x.size()
-    return torch.arange(size[-1], device=x.device).expand(*size).contiguous()
+    model.eval()
+    alignment_heads = 1 if alignment_task=='usehead' else None
+    encoder_out = model.encoder(src_sent, src_lengths=src_lengths)
+    _, attn = model.decoder(prev_output_tokens, encoder_out=encoder_out, alignment_heads=alignment_heads)
+    attn = attn['attn']  ###  bsz x tgt_len x src_len
+
+    # import pdb;pdb.set_trace()
+    alignments = {}  ## is 0-index 
+    for idx in range(bsz):
+        sample_id = sampleID[idx]
+        alignments[sample_id] = []
+        tgt_idxs = ((tgt_sent[idx] != pad) & (tgt_sent[idx] != eos)).nonzero().squeeze(dim=-1) ## used to name the tgt sequence
+        tgt_valid = (tgt_sent[idx] != pad).nonzero().squeeze(dim=-1)  ## use to extract attn weights
+        src_invalid = ((src_sent[idx] == pad) | (src_sent[idx] == eos)).nonzero().squeeze(dim=-1)           
+        src_token_to_word = get_token_to_word_mapping(src_sent[idx], [eos, pad])
+        tgt_token_to_word = get_token_to_word_mapping(tgt_sent[idx], [pad])
+
+        if len(tgt_valid) != 0 and len(src_invalid) < len(src_sent[idx]):  
+            attn_valid = attn[idx,tgt_valid,:]
+            if src_sent[idx,-2] in src_punc_tokens:
+                if tgt_sent[idx,tgt_valid[-2]] in tgt_punc_tokens:
+                    attn_valid[:-1, -2] = float('-inf')   
+                    attn_valid[ -1, -2] = float('+inf')
+                else:
+                    attn_valid[:, -2] = float('-inf') 
+
+            attn_valid = attn_valid[1:,:]
+            attn_valid[:, src_invalid] = float('-inf')
+            _, src_indices = attn_valid.max(dim=1) 
+            for tgt_idx, src_idx in zip(tgt_idxs, src_indices):
+                src_align=src_token_to_word[src_idx.item()] - 1 
+                tgt_align=tgt_token_to_word[tgt_idx.item()] - 1
+                align_str=str(src_align)+'-'+str(tgt_align)
+                alignments[sample_id].append(align_str)
+            alignments[sample_id] = ' '.join(alignments[sample_id])
+    return alignments  
+
+
+def extract_soft_alignment_noshift(sample, model, src_punc_tokens, tgt_punc_tokens=None, alignment_task=None):
+    src_sent = sample['net_input']['src_tokens']
+    src_lengths = sample['net_input']['src_lengths']
+    prev_output_tokens =  sample['net_input']['prev_output_tokens']
+    tgt_sent = sample['target']
+    sampleID = sample['id'].tolist()
+    bsz, _ = src_sent.size()
+    pad = model.decoder.src_dict.pad_index
+    eos = model.decoder.src_dict.eos_index
+
+    encoder_out = model.encoder(src_sent, src_lengths=src_lengths)
+    alignment_heads=1 if alignment_task=='usehead' else None
+    _, attn = model.decoder(prev_output_tokens, encoder_out=encoder_out, alignment_heads=alignment_heads)
+    attn = attn['attn']  ###  bsz x tgt_len x src_len
+
+    alignments = {}  ## is 0-index 
+    
+    for idx in range(bsz):
+        sample_id = sampleID[idx]
+        alignments[sample_id] = []
+        tgt_idxs = ((tgt_sent[idx] != pad) & (tgt_sent[idx] != eos)).nonzero().squeeze(dim=-1) ## used to name the tgt sequence
+        tgt_valid = ((tgt_sent[idx] != pad) & (tgt_sent[idx] != eos)).nonzero().squeeze(dim=-1)  ## use to extract attn weights
+        src_invalid = ((src_sent[idx] == pad) | (src_sent[idx] == eos)).nonzero().squeeze(dim=-1)           
+        src_token_to_word = get_token_to_word_mapping(src_sent[idx], [eos, pad])
+        tgt_token_to_word = get_token_to_word_mapping(tgt_sent[idx], [eos, pad])
+        
+        if len(tgt_valid) != 0 and len(src_invalid) < len(src_sent[idx]): 
+            attn_valid = attn[idx,tgt_valid,:] 
+            if src_sent[idx,-2] in src_punc_tokens:
+                if tgt_sent[idx,tgt_valid[-1]] in tgt_punc_tokens:
+                    attn_valid[:-1, -2] = float('-inf')   
+                    attn_valid[ -1, -2] = float('+inf')
+                else:
+                    attn_valid[:, -2] = float('-inf')                     
+            attn_valid[:, src_invalid] = float('-inf')
+            _, src_indices = attn_valid.max(dim=1) 
+            for tgt_idx, src_idx in zip(tgt_idxs, src_indices):
+                src_align=src_token_to_word[src_idx.item()] - 1 
+                tgt_align=tgt_token_to_word[tgt_idx.item()] - 1
+                align_str=str(src_align)+'-'+str(tgt_align)
+                alignments[sample_id].append(align_str)
+            alignments[sample_id] = ' '.join(alignments[sample_id])
+    return alignments  
+
