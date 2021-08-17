@@ -143,7 +143,7 @@ set -e
 cd ..
 export CUDA_VISIBLE_DEVICES=1
 
-src=de 
+src=vi 
 tgt=en 
 workdir=/content/drive/MyDrive/ChuyenDeNghienCuuKhoaHoc
 # follow https://github.com/lilt/alignment-scripts to process training data
