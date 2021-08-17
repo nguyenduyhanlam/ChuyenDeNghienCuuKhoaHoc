@@ -507,7 +507,7 @@ class Trainer(object):
                 ignore_results = True
             else:
                 ignore_results = False
-
+            # import pdb;pdb.set_trace()
             try:
                 _loss, sample_size, logging_output = self.task.valid_step(
                     sample, self.model, self.criterion
