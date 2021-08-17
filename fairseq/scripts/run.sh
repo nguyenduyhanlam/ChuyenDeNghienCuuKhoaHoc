@@ -145,7 +145,7 @@ export CUDA_VISIBLE_DEVICES=1
 
 src=de 
 tgt=en 
-workdir=/path/to/your/work/dir
+workdir=/content/drive/MyDrive/ChuyenDeNghienCuuKhoaHoc
 # follow https://github.com/lilt/alignment-scripts to process training data
 # processed data is in $workdir/processed_data dir.
 
