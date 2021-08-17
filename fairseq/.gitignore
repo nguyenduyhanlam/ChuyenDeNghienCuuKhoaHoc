@@ -113,7 +113,6 @@ ENV/
 /fairseq/temporal_convolution_tbc
 /fairseq/modules/*_layer/*_forward.cu
 /fairseq/modules/*_layer/*_backward.cu
-/fairseq/version.py
 
 # data
 data-bin/
@@ -128,9 +127,3 @@ data-bin/
 # VSCODE
 .vscode/ftp-sync.json
 .vscode/settings.json
-
-# Experimental Folder
-experimental/*
-
-# Weights and Biases logs
-wandb/
