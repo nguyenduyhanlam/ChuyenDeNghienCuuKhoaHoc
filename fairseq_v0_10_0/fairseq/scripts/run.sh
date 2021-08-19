@@ -146,7 +146,7 @@ export CUDA_VISIBLE_DEVICES=1
 src=vi 
 tgt=en 
 workdir=/content/drive/MyDrive/ChuyenDeNghienCuuKhoaHoc/v0_10_0
-codedir=/content/ChuyenDeNghienCuuKhoaHoc/fairseq v0.10.0/fairseq
+codedir=/content/ChuyenDeNghienCuuKhoaHoc/fairseq_v0_10_0/fairseq
 # follow https://github.com/lilt/alignment-scripts to process training data
 # processed data is in $workdir/processed_data dir.
 
