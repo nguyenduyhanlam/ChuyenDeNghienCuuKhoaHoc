@@ -39,7 +39,7 @@ train_AET_transformer(){
         --warmup-updates 4000 --warmup-init-lr '1e-07' --keep-last-epochs 100  \
         --adam-betas '(0.9, 0.98)' --save-dir $modeldir --update-freq 8 --ddp-backend no_c10d \
         --share-all-embeddings --save-interval 1 \
-        --alignment-task 'supalign' --set-dual-trans  --load-dual-model \
+        --alignment-task 'supalign' --set-dual-trans --load-dual-model --load-alignments \
     2>&1 | tee $modeldir/train_log.out
 }
 
