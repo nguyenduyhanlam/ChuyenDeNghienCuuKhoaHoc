@@ -346,9 +346,9 @@ def add_optimization_args(parser):
 def add_checkpoint_args(parser):
     group = parser.add_argument_group("checkpoint")
     # fmt: off
+    gen_parser_from_dataclass(group, CheckpointConfig())
     group.add_argument('--load-dual-model', action='store_true',
                        help='load dual forward and backward transformer model')
-    gen_parser_from_dataclass(group, CheckpointConfig())
     # fmt: on
     return group
 
