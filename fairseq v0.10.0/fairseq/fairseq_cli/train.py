@@ -152,12 +152,21 @@ def main(cfg: FairseqConfig) -> None:
 
     # Load the latest checkpoint if one is available and restore the
     # corresponding train iterator
-    extra_state, epoch_itr = checkpoint_utils.load_checkpoint(
-        cfg.checkpoint,
-        trainer,
-        # don't cache epoch iterators for sharded datasets
-        disable_iterator_cache=task.has_sharded_data("train"),
-    )
+    if not args.load_dual_model:
+        extra_state, epoch_itr = checkpoint_utils.load_checkpoint(
+            cfg.checkpoint,
+            trainer,
+            # don't cache epoch iterators for sharded datasets
+            disable_iterator_cache=task.has_sharded_data("train"),
+        )
+    else:
+        extra_state, epoch_itr = checkpoint_utils.load_dual_checkpoint(
+            cfg.checkpoint,
+            trainer,
+            # don't cache epoch iterators for sharded datasets
+            disable_iterator_cache=task.has_sharded_data("train"),
+        )
+    
     if cfg.common.tpu:
         import torch_xla.core.xla_model as xm
         xm.rendezvous("load_checkpoint")  # wait for all workers

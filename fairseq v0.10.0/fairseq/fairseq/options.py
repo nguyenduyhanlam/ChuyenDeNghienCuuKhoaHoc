@@ -286,6 +286,8 @@ def add_preprocess_args(parser):
                        help="Pad dictionary size to be multiple of N")
     group.add_argument("--workers", metavar="N", default=1, type=int,
                        help="number of parallel workers")
+    group.add_argument("--process-only-alignment", action="store_true",
+                       help="Only process the source language")
     group.add_argument("--dict-only", action='store_true',
                        help="if true, only builds a dictionary and then exits")
     # fmt: on
@@ -294,6 +296,30 @@ def add_preprocess_args(parser):
 
 def add_dataset_args(parser, train=False, gen=False):
     group = parser.add_argument_group("dataset_data_loading")
+    parser.add_argument('--set-add-align-head', action='store_true',
+                            help='if True, add an head in each decoder layer for alignment')
+    parser.add_argument('--set-shift', action='store_true',
+                            help='if True, train and test shifted attention.')
+    parser.add_argument('--alignment-task', default='vanilla', type=str, choices=['vanilla', 'usehead', 'addhead', 'supalign', 'ptrnet','dual'],
+                            help='train and test shifted attention.') 
+    parser.add_argument('--set-src-bow-loss', action='store_true',
+                            help='start to train with src bag-of-words loss')
+    group.add_argument('--beam', default=5, type=int, metavar='N',
+                       help='beam size')
+    # if 'alignment_layer' in parser:
+    parser.add_argument('--alignment-layer', default=2, type=int,
+                            help='train and test shifted attention.')
+    parser.add_argument('--alignment-heads', type=int, metavar='D',
+                            help='Number of cross attention heads per layer to supervised with alignments')
+    parser.add_argument('--cons-type', type=str, metavar='D',
+                            help='Number of cross attention heads per layer to supervised with alignments')
+    parser.add_argument('--set-dual-trans', action='store_true',
+                            help='train attention agreement model')
+    group.add_argument('--model-overrides', default="{}", type=str, metavar='DICT',
+                       help='a dictionary used to override model args at generation '
+                            'that were used during model training')
+    group.add_argument('--print-vanilla-alignment', action="store_true",
+                           help='use shifted attention to extract alignment')
     gen_parser_from_dataclass(group, DatasetConfig())
     # fmt: on
     return group
@@ -320,12 +346,16 @@ def add_optimization_args(parser):
 def add_checkpoint_args(parser):
     group = parser.add_argument_group("checkpoint")
     # fmt: off
+    group.add_argument('--load-dual-model', action='store_true',
+                       help='load dual forward and backward transformer model')
     gen_parser_from_dataclass(group, CheckpointConfig())
     # fmt: on
     return group
 
 
 def add_common_eval_args(group):
+    group.add_argument('--decoding-path', metavar='RESDIR', type=str, default=None,
+                       help='path to save eval results (optional)"')
     gen_parser_from_dataclass(group, CommonEvalConfig())
 
 

@@ -101,9 +101,9 @@ def main(args):
                 continue
             if args.print_vanilla_alignment:
                 if args.set_shift:
-                    alignments = utils.extract_soft_alignment(sample,models[0],src_punc_tokens, tgt_punc_tokens, alignment_task=args.alignment_task)
+                    alignments = utils.extract_new_soft_alignment(sample,models[0],src_punc_tokens, tgt_punc_tokens, alignment_task=args.alignment_task)
                 else:
-                    alignments = utils.extract_soft_alignment_noshift(sample,models[0],src_punc_tokens, tgt_punc_tokens, alignment_task=args.alignment_task)
+                    alignments = utils.extract_new_soft_alignment_noshift(sample,models[0],src_punc_tokens, tgt_punc_tokens, alignment_task=args.alignment_task)
             else:
                 alignments = None
             
