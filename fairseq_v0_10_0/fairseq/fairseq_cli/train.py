@@ -152,7 +152,7 @@ def main(cfg: FairseqConfig) -> None:
 
     # Load the latest checkpoint if one is available and restore the
     # corresponding train iterator
-    if not args.load_dual_model:
+    if not cfg.load_dual_model:
         extra_state, epoch_itr = checkpoint_utils.load_checkpoint(
             cfg.checkpoint,
             trainer,
