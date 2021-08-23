@@ -141,7 +141,7 @@ calculate_shift_att_AER(){
 
 set -e 
 cd ..
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 src=vi 
 tgt=en 
