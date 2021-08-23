@@ -15,7 +15,7 @@ train_model(){
         --criterion label_smoothed_cross_entropy --max-update $MaxUpdates --clip-norm 0.0 \
         --warmup-updates 4000 --warmup-init-lr '1e-07' --keep-last-epochs 200 \
         --adam-betas '(0.9, 0.98)' --save-dir $modeldir --log-interval 1000 \
-        --share-all-embeddings --alignment-task 'vanilla' --save-interval 1 \
+        --share-all-embeddings --alignment-task 'vanilla' --save-interval 1 --fp16 \
     2>&1 | tee $modeldir/train_log.out 
 }
 
@@ -38,7 +38,7 @@ train_AET_transformer(){
         --criterion label_smoothed_cross_entropy_dual_trans --max-update $MaxUpdates --clip-norm 0.0 \
         --warmup-updates 4000 --warmup-init-lr '1e-07' --keep-last-epochs 100  \
         --adam-betas '(0.9, 0.98)' --save-dir $modeldir --log-interval 1000 \
-        --share-all-embeddings --save-interval 1 \
+        --share-all-embeddings --save-interval 1 --fp16 \
         --alignment-task 'supalign' --set-dual-trans --load-dual-model --load-alignments \
     2>&1 | tee $modeldir/train_log.out
 }
