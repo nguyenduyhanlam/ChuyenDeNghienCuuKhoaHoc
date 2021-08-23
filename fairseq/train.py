@@ -27,6 +27,7 @@ def main(args, init_distributed=False):
         'Must specify batch size either with --max-tokens or --max-sentences'
 
     # Initialize CUDA and distributed training
+    print(torch.cuda.is_available())
     if torch.cuda.is_available() and not args.cpu:
         torch.cuda.set_device(args.device_id)
     np.random.seed(args.seed)
