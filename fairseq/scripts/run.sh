@@ -11,7 +11,7 @@ train_model(){
     python $codedir/train.py $workdir/processed_data \
         -a transformer_wmt_en_de_big --optimizer adam --lr 0.0005 -s $src -t $tgt \
         --label-smoothing 0.1 --dropout 0.3 --max-tokens 4500  \
-        --min-lr '1e-09' --lr-scheduler inverse_sqrt --weight-decay 0.0 --activation-fn relu \
+        --min-lr '5e-05' --lr-scheduler inverse_sqrt --weight-decay 0.0 --activation-fn relu \
         --criterion label_smoothed_cross_entropy --max-update $MaxUpdates --clip-norm 0.0 \
         --warmup-updates 4000 --warmup-init-lr '1e-07' --keep-last-epochs 200 \
         --adam-betas '(0.9, 0.98)' --save-dir $modeldir --log-interval 1000 \
@@ -34,7 +34,7 @@ train_AET_transformer(){
     python $codedir/train.py $workdir/processed_data \
         -a dual_transformer_small --optimizer adam --lr 0.0005 -s $src -t $tgt \
         --label-smoothing 0.1 --dropout 0.3 --max-tokens 4500  \
-        --min-lr '1e-09' --lr-scheduler inverse_sqrt --weight-decay 0.0 --activation-fn relu \
+        --min-lr '5e-05' --lr-scheduler inverse_sqrt --weight-decay 0.0 --activation-fn relu \
         --criterion label_smoothed_cross_entropy_dual_trans --max-update $MaxUpdates --clip-norm 0.0 \
         --warmup-updates 4000 --warmup-init-lr '1e-07' --keep-last-epochs 100  \
         --adam-betas '(0.9, 0.98)' --save-dir $modeldir --log-interval 1000 \
