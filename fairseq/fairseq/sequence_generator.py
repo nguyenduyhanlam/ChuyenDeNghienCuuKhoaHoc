@@ -507,6 +507,7 @@ class SequenceGenerator(object):
             # swap buffers
             tokens, tokens_buf = tokens_buf, tokens
             scores, scores_buf = scores_buf, scores
+            
             if attn is not None:
                 attn, attn_buf = attn_buf, attn
 

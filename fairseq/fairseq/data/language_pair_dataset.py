@@ -11,7 +11,7 @@ from . import data_utils, FairseqDataset
 
 def collate(
     samples, pad_idx, eos_idx, left_pad_source=True, left_pad_target=False,
-    input_feeding=True,
+    input_feeding=True, args=None,
 ):
     if len(samples) == 0:
         return {}
@@ -71,7 +71,6 @@ def collate(
             prev_output_tokens = prev_output_tokens.index_select(0, sort_order)
     else:
         ntokens = sum(len(s['source']) for s in samples)
-
     batch = {
         'id': id,
         'nsentences': len(samples),
@@ -85,6 +84,26 @@ def collate(
     if prev_output_tokens is not None:
         batch['net_input']['prev_output_tokens'] = prev_output_tokens
 
+    if args is not None and args.set_dual_trans:
+        batch['dual_reverse'] = {}
+        rev_src_tokens = merge('target', left_pad=left_pad_source)
+        rev_src_tokens = rev_src_tokens.index_select(0, sort_order)
+
+        rev_src_lengths = torch.LongTensor([s['target'].numel() for s in samples])
+        rev_src_lengths = rev_src_lengths.index_select(0, sort_order)
+
+        rev_prev_output_tokens = merge('source',left_pad=left_pad_target,move_eos_to_beginning=True)
+        rev_prev_output_tokens = rev_prev_output_tokens.index_select(0, sort_order)
+
+        rev_target = merge('source', left_pad=left_pad_target)
+        rev_target = rev_target.index_select(0, sort_order)
+        rev_tgt_lengths = torch.LongTensor([s['source'].numel() for s in samples]).index_select(0, sort_order)
+
+        batch['dual_reverse']['src_tokens'] = rev_src_tokens
+        batch['dual_reverse']['src_lengths'] = rev_src_lengths
+        batch['dual_reverse']['prev_output_tokens'] = rev_prev_output_tokens
+        batch['dual_reverse']['target'] = rev_target
+
     if samples[0].get('alignment', None) is not None:
         bsz, tgt_sz = batch['target'].shape
         src_sz = batch['net_input']['src_tokens'].shape[1]
@@ -95,20 +114,39 @@ def collate(
             offsets[:, 0] += (src_sz - src_lengths)
         if left_pad_target:
             offsets[:, 1] += (tgt_sz - tgt_lengths)
-
         alignments = [
             alignment + offset
             for align_idx, offset, src_len, tgt_len in zip(sort_order, offsets, src_lengths, tgt_lengths)
             for alignment in [samples[align_idx]['alignment'].view(-1, 2)]
             if check_alignment(alignment, src_len, tgt_len)
         ]
-
         if len(alignments) > 0:
             alignments = torch.cat(alignments, dim=0)
             align_weights = compute_alignment_weights(alignments)
-
             batch['alignments'] = alignments
             batch['align_weights'] = align_weights
+        
+        if args is not None and args.set_dual_trans:
+            bsz, tgt_sz = batch['dual_reverse']['target'].shape
+            src_sz = batch['dual_reverse']['src_tokens'].shape[1]
+            offsets = torch.zeros((len(sort_order), 2), dtype=torch.long)
+            offsets[:, 1] += (torch.arange(len(sort_order), dtype=torch.long) * tgt_sz)
+            if left_pad_source:
+                offsets[:, 0] += (src_sz - rev_src_lengths)
+            if left_pad_target:
+                offsets[:, 1] += (tgt_sz - rev_tgt_lengths)
+            rev_alignments = [
+                alignment + offset
+                for align_idx, offset, src_len, tgt_len in zip(sort_order, offsets, rev_src_lengths, rev_tgt_lengths)
+                for alignment in [samples[align_idx]['rev_alignment'].view(-1, 2)]
+                if check_alignment(alignment, src_len, tgt_len)
+            ]
+            
+            if len(alignments) > 0:
+                rev_alignments = torch.cat(rev_alignments, dim=0)
+                rev_align_weights = compute_alignment_weights(rev_alignments)
+                batch['dual_reverse']['alignments'] = rev_alignments
+                batch['dual_reverse']['align_weights'] = rev_align_weights
 
     return batch
 
@@ -154,7 +192,7 @@ class LanguagePairDataset(FairseqDataset):
         shuffle=True, input_feeding=True,
         remove_eos_from_source=False, append_eos_to_target=False,
         align_dataset=None,
-        append_bos=False
+        append_bos=False, reverse_alignment=False, args=None,
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
@@ -175,9 +213,11 @@ class LanguagePairDataset(FairseqDataset):
         self.remove_eos_from_source = remove_eos_from_source
         self.append_eos_to_target = append_eos_to_target
         self.align_dataset = align_dataset
+        self.reverse_alignment=reverse_alignment
         if self.align_dataset is not None:
             assert self.tgt_sizes is not None, "Both source and target needed when alignments are provided"
         self.append_bos = append_bos
+        self.args = args 
 
     def __getitem__(self, index):
         tgt_item = self.tgt[index] if self.tgt is not None else None
@@ -210,8 +250,16 @@ class LanguagePairDataset(FairseqDataset):
             'source': src_item,
             'target': tgt_item,
         }
+        # from fairseq import pdb
+        # pdb.set_trace()
         if self.align_dataset is not None:
-            example['alignment'] = self.align_dataset[index]
+            if not self.reverse_alignment:
+                example['alignment'] = self.align_dataset[index]
+                example['rev_alignment'] = torch.index_select(self.align_dataset[index].view(-1,2), 1, torch.LongTensor([1,0]))        
+                example['rev_alignment'] = example['rev_alignment'].view(-1).type_as(self.align_dataset[index])
+            else:
+                example['alignment'] = torch.index_select(self.align_dataset[index].view(-1,2), 1, torch.LongTensor([1,0]))        
+                example['alignment'] = example['alignment'].view(-1).type_as(self.align_dataset[index])
         return example
 
     def __len__(self):
@@ -249,7 +297,7 @@ class LanguagePairDataset(FairseqDataset):
         return collate(
             samples, pad_idx=self.src_dict.pad(), eos_idx=self.src_dict.eos(),
             left_pad_source=self.left_pad_source, left_pad_target=self.left_pad_target,
-            input_feeding=self.input_feeding,
+            input_feeding=self.input_feeding, args=self.args,
         )
 
     def num_tokens(self, index):

@@ -114,6 +114,10 @@ class Scorer(object):
         ]
 
     def brevity(self):
+        if self.stat.predlen == 0:
+            print("error, self.stat.predlen is 0 ...")
+            self.stat.predlen = 1
+            return 0
         r = self.stat.reflen / self.stat.predlen
         return min(1, math.exp(1 - r))
 
@@ -124,6 +128,11 @@ class Scorer(object):
             fmt += '/{:2.1f}'
         fmt += ' (BP={:.3f}, ratio={:.3f}, syslen={}, reflen={})'
         bleup = [p * 100 for p in self.precision()[:order]]
+        mcc = self.stat.predlen/self.stat.reflen if self.stat.reflen !=0 else 0
         return fmt.format(order, self.score(order=order), *bleup,
-                          self.brevity(), self.stat.predlen/self.stat.reflen,
+                          self.brevity(), mcc,
                           self.stat.predlen, self.stat.reflen)
+        
+        # return fmt.format(order, self.score(order=order), *bleup,
+        #                   self.brevity(), self.stat.predlen/self.stat.reflen,
+        #                   self.stat.predlen, self.stat.reflen)

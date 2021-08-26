@@ -28,7 +28,7 @@ def load_langpair_dataset(
     combine, dataset_impl, upsample_primary,
     left_pad_source, left_pad_target, max_source_positions,
     max_target_positions, prepend_bos=False, load_alignments=False,
-    truncate_source=False,
+    truncate_source=False, args=None,
 ):
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, '{}.{}-{}.{}'.format(split, src, tgt, lang))
@@ -44,6 +44,7 @@ def load_langpair_dataset(
         if split_exists(split_k, src, tgt, src, data_path):
             prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, src, tgt))
         elif split_exists(split_k, tgt, src, src, data_path):
+            print("load opposite dataset...")
             prefix = os.path.join(data_path, '{}.{}-{}.'.format(split_k, tgt, src))
         else:
             if k > 0:
@@ -86,10 +87,16 @@ def load_langpair_dataset(
         tgt_dataset = PrependTokenDataset(tgt_dataset, tgt_dict.bos())
 
     align_dataset = None
+    reverse_alignment = False
     if load_alignments:
         align_path = os.path.join(data_path, '{}.align.{}-{}'.format(split, src, tgt))
+        reverse_align_path = os.path.join(data_path, '{}.align.{}-{}'.format(split, tgt, src))
         if indexed_dataset.dataset_exists(align_path, impl=dataset_impl):
             align_dataset = data_utils.load_indexed_dataset(align_path, None, dataset_impl)
+        elif indexed_dataset.dataset_exists(reverse_align_path, impl=dataset_impl):
+            print("load opposite alignment dataset...")
+            align_dataset = data_utils.load_indexed_dataset(reverse_align_path, None, dataset_impl)
+            reverse_alignment=True 
 
     return LanguagePairDataset(
         src_dataset, src_dataset.sizes, src_dict,
@@ -99,6 +106,8 @@ def load_langpair_dataset(
         max_source_positions=max_source_positions,
         max_target_positions=max_target_positions,
         align_dataset=align_dataset,
+        reverse_alignment=reverse_alignment,
+        args=args, 
     )
 
 
@@ -158,6 +167,7 @@ class TranslationTask(FairseqTask):
         super().__init__(args)
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        self.args = args
 
     @classmethod
     def setup_task(cls, args, **kwargs):
@@ -216,7 +226,7 @@ class TranslationTask(FairseqTask):
             max_source_positions=self.args.max_source_positions,
             max_target_positions=self.args.max_target_positions,
             load_alignments=self.args.load_alignments,
-            truncate_source=self.args.truncate_source,
+            truncate_source=self.args.truncate_source, args=self.args,
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths):

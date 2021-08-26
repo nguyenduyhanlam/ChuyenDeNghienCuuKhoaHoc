@@ -59,14 +59,15 @@ class BeamSearch(Search):
     def step(self, step, lprobs, scores):
         super()._init_buffers(lprobs)
         bsz, beam_size, vocab_size = lprobs.size()
+        ## scores: bsz x beamsize x (step)
 
         if step == 0:
             # at the first step all hypotheses are equally likely, so use
-            # only the first beam
+            # only the first beam  fairseq/search.py:81
             lprobs = lprobs[:, ::beam_size, :].contiguous()
         else:
             # make probs contain cumulative scores for each hypothesis
-            lprobs.add_(scores[:, :, step - 1].unsqueeze(-1))
+            lprobs.add_(scores[:, :, step - 1].unsqueeze(-1))   ### bsz x beam_size x vocab_size + bsz x beamsize x 1, 
 
         torch.topk(
             lprobs.view(bsz, -1),
@@ -77,7 +78,7 @@ class BeamSearch(Search):
                 lprobs.view(bsz, -1).size(1) - 1,  # -1 so we never select pad
             ),
             out=(self.scores_buf, self.indices_buf),
-        )
+        )     ## for each batch , get 2 x beam_size hypo, 
         torch.div(self.indices_buf, vocab_size, out=self.beams_buf)
         self.indices_buf.fmod_(vocab_size)
         return self.scores_buf, self.indices_buf, self.beams_buf

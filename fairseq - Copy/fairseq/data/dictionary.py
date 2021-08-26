@@ -23,6 +23,7 @@ class Dictionary(object):
         eos='</s>',
         unk='<unk>',
         bos='<s>',
+        seg='<seg>',
         extra_special_symbols=None,
     ):
         self.unk_word, self.pad_word, self.eos_word = unk, pad, eos
@@ -33,6 +34,7 @@ class Dictionary(object):
         self.pad_index = self.add_symbol(pad)
         self.eos_index = self.add_symbol(eos)
         self.unk_index = self.add_symbol(unk)
+        self.seg_index = self.add_symbol(seg)
         if extra_special_symbols:
             for s in extra_special_symbols:
                 self.add_symbol(s)
@@ -60,24 +62,29 @@ class Dictionary(object):
             return self.indices[sym]
         return self.unk_index
 
-    def string(self, tensor, bpe_symbol=None, escape_unk=False):
+    def string(self, tensor, bpe_symbol=None, escape_unk=False, tgt_dict=None, escape_pad=False):
         """Helper for converting a tensor of token indices to a string.
-
         Can optionally remove BPE symbols or escape <unk> words.
         """
+        # import pdb;pdb.set_trace()
         if torch.is_tensor(tensor) and tensor.dim() == 2:
-            return '\n'.join(self.string(t, bpe_symbol, escape_unk) for t in tensor)
+            return '\n'.join(self.string(t, tgt_dict=tgt_dict, escape_pad=escape_pad) for t in tensor)
 
-        def token_string(i):
+        def token_string(i,idx,seg_id=None):
             if i == self.unk():
                 return self.unk_string(escape_unk)
+            elif tgt_dict is not None:
+                word=tgt_dict[i] if ((seg_id > 0) and (idx > seg_id)) else self[i]
+                return word
+            elif escape_pad and i==self.pad():
+                return ''
             else:
                 return self[i]
-
-        if hasattr(self, 'bos_index'):
-            sent = ' '.join(token_string(i) for i in tensor if (i != self.eos()) and (i != self.bos()))
-        else:
-            sent = ' '.join(token_string(i) for i in tensor if i != self.eos())
+        
+        token_seq = [int(x) for x in tensor]
+        seg_id = token_seq.index(self.seg_index) if (self.seg_index in token_seq) else -1
+        sent = ' '.join(token_string(i,idx,seg_id=seg_id) \
+            for idx,i in enumerate(tensor) if i != self.eos())
         return data_utils.process_bpe_symbol(sent, bpe_symbol)
 
     def unk_string(self, escape=False):

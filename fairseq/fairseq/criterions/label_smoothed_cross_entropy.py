@@ -3,9 +3,10 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
+import math,torch
 
 from fairseq import utils
+import torch.nn.functional as F
 
 from . import FairseqCriterion, register_criterion
 
@@ -63,6 +64,7 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
             'nsentences': sample['target'].size(0),
             'sample_size': sample_size,
         }
+
         return loss, sample_size, logging_output
 
     def compute_loss(self, model, net_output, sample, reduce=True):

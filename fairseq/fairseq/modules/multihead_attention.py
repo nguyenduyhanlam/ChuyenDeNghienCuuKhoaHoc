@@ -242,11 +242,11 @@ class MultiheadAttention(nn.Module):
             attn_weights += attn_mask
 
         if key_padding_mask is not None:
-            # don't attend to padding symbols
+            # don't attend to padding symbols  fairseq/modules/multihead_attention.py:244
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
             attn_weights = attn_weights.masked_fill(
                 key_padding_mask.unsqueeze(1).unsqueeze(2),
-                float('-inf'),
+                float('-inf'),  ##float(-6e4),  #float(-1e8),  #float('-inf'), #TODO: and so you see beings in their potential happiness .
             )
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 

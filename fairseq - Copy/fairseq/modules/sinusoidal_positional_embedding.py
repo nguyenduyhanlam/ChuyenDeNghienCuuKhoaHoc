@@ -11,6 +11,33 @@ import torch.onnx.operators
 
 from fairseq import utils
 
+def Linear(in_features, out_features, bias=True):
+    m = nn.Linear(in_features, out_features, bias)
+    nn.init.xavier_uniform_(m.weight)
+    if bias:
+        nn.init.constant_(m.bias, 0.)
+    return m
+    
+class PointerNet(nn.Module):
+    def __init__(self, enc_hid_dim, dec_hid_dim, vocabsize):
+        super().__init__()
+        self.linear = Linear(enc_hid_dim+dec_hid_dim,1)
+
+    def forward(self, ctx, dec_hid):
+        """
+        enc_hids: srclen x bsz x hidsize
+        dec_enc_attn: bsz x tgtlen x srclen
+        dec_hid: bsz x tgtlen x hidsize
+        src_tokens: bsz x srclen
+        c_t : bsz x tgtlen x hidsize  
+        """
+        # enc_hids = enc_hids.transpose(0,1) ### srclen x bsz x hidsize  -> bsz x srclen x hidsize
+        # x = torch.bmm(dec_enc_attn,enc_hids)  ## bsz x tgtlen x hidsize
+        x = torch.cat((ctx,dec_hid), dim=-1)  ## bsz x tgtlen x hidsize ->  bsz x tgtlen x (hidsize x 2)
+        x = self.linear(x)   ## bsz x tgtlen x 1
+        x = torch.sigmoid(x) ## bsz x tgtlen x 1 
+        # x = torch.round(x)     
+        return x
 
 class SinusoidalPositionalEmbedding(nn.Module):
     """This module produces sinusoidal positional embeddings of any length.

@@ -132,7 +132,7 @@ class TransformerDecoderLayer(nn.Module):
             (default: False).
     """
 
-    def __init__(self, args, no_encoder_attn=False, add_bias_kv=False, add_zero_attn=False):
+    def __init__(self, args, no_encoder_attn=False, add_bias_kv=False, add_zero_attn=False, add_suphead=False):
         super().__init__()
         self.embed_dim = args.decoder_embed_dim
         self.cross_self_attention = getattr(args, 'cross_self_attention', False)
@@ -144,6 +144,20 @@ class TransformerDecoderLayer(nn.Module):
             add_zero_attn=add_zero_attn,
             self_attention=not self.cross_self_attention,
         )
+
+        if add_suphead:
+            suphead_num = args.decoder_attention_heads
+            self.suphead = MultiheadAttention(
+                self.embed_dim,
+                suphead_num,
+                kdim=getattr(args, 'encoder_embed_dim', None),
+                vdim=getattr(args, 'encoder_embed_dim', None),
+                dropout=args.attention_dropout,
+                encoder_decoder_attention=True,
+            )
+        else:
+            self.suphead = None
+
         self.dropout = args.dropout
         self.activation_fn = utils.get_activation_fn(
             activation=getattr(args, 'activation_fn', 'relu')
@@ -197,6 +211,7 @@ class TransformerDecoderLayer(nn.Module):
         self_attn_padding_mask=None,
         need_attn=False,
         need_head_weights=False,
+        need_self_attn=False,
     ):
         """
         Args:
@@ -219,6 +234,7 @@ class TransformerDecoderLayer(nn.Module):
         if prev_self_attn_state is not None:
             if incremental_state is None:
                 incremental_state = {}
+                print("init incremental.")
             prev_key, prev_value = prev_self_attn_state[:2]
             saved_state = {"prev_key": prev_key, "prev_value": prev_value}
             if len(prev_self_attn_state) >= 3:
@@ -236,13 +252,13 @@ class TransformerDecoderLayer(nn.Module):
         else:
             y = x
 
-        x, attn = self.self_attn(
+        x, dec_attn = self.self_attn(
             query=x,
             key=y,
             value=y,
             key_padding_mask=self_attn_padding_mask,
             incremental_state=incremental_state,
-            need_weights=False,
+            need_weights=need_self_attn,
             attn_mask=self_attn_mask,
         )
         x = F.dropout(x, p=self.dropout, training=self.training)
@@ -274,6 +290,21 @@ class TransformerDecoderLayer(nn.Module):
             x = F.dropout(x, p=self.dropout, training=self.training)
             x = residual + x
             x = self.maybe_layer_norm(self.encoder_attn_layer_norm, x, after=True)
+        
+        if self.suphead is not None:
+            _, suphead_attn = self.suphead(
+                query=residual,
+                key=encoder_out,
+                value=encoder_out,
+                key_padding_mask=encoder_padding_mask,
+                incremental_state=incremental_state,
+                static_kv=True,
+                need_weights=True,
+                need_head_weights=False,
+            )
+        else:
+            suphead_attn = None
+
 
         residual = x
         x = self.maybe_layer_norm(self.final_layer_norm, x, before=True)
@@ -290,7 +321,12 @@ class TransformerDecoderLayer(nn.Module):
             else:
                 self_attn_state = saved_state["prev_key"], saved_state["prev_value"]
             return x, attn, self_attn_state
-        return x, attn
+        
+        if not need_self_attn:
+            dec_attn = None    
+        
+        return x, attn, dec_attn, suphead_attn
+            
 
     def maybe_layer_norm(self, layer_norm, x, before=False, after=False):
         assert before ^ after
